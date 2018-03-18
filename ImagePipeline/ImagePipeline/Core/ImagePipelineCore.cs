@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.UI.Core;
 using Windows.UI.Xaml.Media.Imaging;
@@ -769,6 +770,33 @@ namespace ImagePipeline.Core
                         }
                     },
                     TaskContinuationOptions.ExecuteSynchronously);
+            }
+        }
+
+        /// <summary>
+        ///  Caches the given byte array to disk.
+        /// </summary>
+        public async Task CacheByteArrayAsync(ICacheKey cacheKey, byte[] data)
+        {
+            var supplier = new SupplierImpl<FileStream>(
+            () =>
+            {
+                // Creates temp file to write byte array.
+                var tempFile = Path.Combine(
+                    ApplicationData.Current.TemporaryFolder.Path,
+                    Guid.NewGuid().ToString());
+
+                var stream = new FileInfo(tempFile).Create();
+                stream.Write(data, 0, data.Length);
+                stream.Seek(0, SeekOrigin.Begin);
+                return stream;
+            });
+
+            // Writes data to disk.
+            using (var encodedImage = new EncodedImage(supplier, data.Length))
+            {
+                await _mainBufferedDiskCache.Put(cacheKey, encodedImage)
+                    .ConfigureAwait(false);
             }
         }
 

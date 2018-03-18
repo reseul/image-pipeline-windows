@@ -1,6 +1,7 @@
 ﻿using FBCore.Common.References;
 using FBCore.Concurrency;
 using FBCore.DataSource;
+using ImagePipeline.Cache;
 using ImagePipeline.Core;
 using ImagePipeline.Image;
 using ImagePipeline.Memory;
@@ -1253,6 +1254,45 @@ namespace ImagePipeline.Tests.Core
 
             FileInfo info = await _imagePipeline.GetFileCachePath(FAILURE_URL).ConfigureAwait(false);
             Assert.IsNull(info);
+        }
+
+        /// <summary>
+        /// Tests out caching a byte array.
+        /// </summary>
+        [TestMethod]
+        public async Task TestCacheByteArray()
+        {
+            // Prepares byte array to cache.
+            var file = await StorageFile.GetFileFromApplicationUriAsync(LOCAL_PNG_URL)
+                .AsTask()
+                .ConfigureAwait(false);
+
+            var fileData = default(byte[]);
+            using (var fileStream = await file.OpenReadAsync().AsTask().ConfigureAwait(false))
+            using (var readStream = fileStream.AsStreamForRead())
+            {
+                var length = (int)readStream.Length;
+                fileData = new byte[length];
+                await readStream.ReadAsync(fileData, 0, length).ConfigureAwait(false);
+            }
+
+            // Generates a unique uri, must have http prefix.
+            var uri = new Uri("http://myuniqueimage.png");
+            var cacheKey = DefaultCacheKeyFactory.Instance.GetEncodedCacheKey(
+                ImageRequest.FromUri(uri), null);
+
+            // Caches byte array to disk.
+            await _imagePipeline.CacheByteArrayAsync(cacheKey, fileData)
+                .ConfigureAwait(false);
+
+            // Verifies that the byte array has been cached.
+            var image = await _imagePipeline.FetchDecodedBitmapImageAsync(
+                ImageRequest.FromUri(uri)).ConfigureAwait(false);
+
+            Assert.IsTrue(image.GetType() == typeof(WriteableBitmap));
+            Assert.IsTrue(_imagePipeline.IsInBitmapMemoryCache(uri));
+            Assert.IsTrue(await _imagePipeline.IsInDiskCacheAsync(uri)
+                .ConfigureAwait(false));
         }
     }
 }
